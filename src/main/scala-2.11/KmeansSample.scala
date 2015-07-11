@@ -4,29 +4,37 @@
 
 import org.apache.spark.SparkContext
 import org.apache.spark.mllib.clustering.KMeans
-import org.apache.spark.mllib.linalg.Vectors
+import org.apache.spark.mllib.feature.HashingTF
+import org.apache.spark.mllib.feature.IDF
+import org.slf4j.Logger
 
 object KmeansSample extends App {
-  val context = new SparkContext("local", "demo")
+  val context = new SparkContext("local", "reuter-demo")
 
-  val data = context.
-    textFile("src/main/resources/iris.data").
-    filter(_.nonEmpty).
-    map { s =>
-    val elems = s.split(",")
-    (elems.last, Vectors.dense(elems.init.map(_.toDouble)))
-  }
+  val documents = context
+    .wholeTextFiles("src/main/resources/reuter/extracted/")
+    .map{ _._2 }
+//    .map{ text => text.lines }
+//    .map{ lines => lines.drop(lines.size - 2).next() }
+    .map{ _.split(" ").toSeq }
 
-  val k = 3 
-  val maxItreations = 100
-  val clusters = KMeans.train(data.map(_._2), k, maxItreations)
+  val hashingTF = new HashingTF()
+  val tf = hashingTF.transform(documents)
 
-  clusters.clusterCenters.foreach {
-    center => println(f"${center.toArray.mkString("[", ", ", "]")}%s")
-  }
+  tf.cache()
+  val idf = new IDF().fit(tf)
+  val tfidf = idf.transform(tf)
 
-  data.foreach { tuple =>
-    println(f"${tuple._2.toArray.mkString("[", ", ", "]")}%s " +
-      f"(${tuple._1}%s) : cluster = ${clusters.predict(tuple._2)}%d")
-  }
+  val k = 20
+  val maxItreations = 50
+  val clusters = KMeans.train(tfidf, k, maxItreations)
+
+//  clusters.clusterCenters.foreach {
+//    center => println(f"${center.toArray.mkString("[", ", ", "]")}%s")
+//  }
+//
+//  tfidf.foreach { tuple =>
+//    println(f"${tuple._2.toArray.mkString("[", ", ", "]")}%s " +
+//      f"(${tuple._1}%s) : cluster = ${clusters.predict(tuple._2)}%d")
+//  }
 }
