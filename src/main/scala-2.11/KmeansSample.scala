@@ -10,11 +10,17 @@ import org.apache.spark.mllib.feature.IDF
 object KmeansSample extends App {
   val context = new SparkContext("local", "reuter-demo")
 
+  val stopwords = List(
+    "a", "an", "the", "who", "what", "are", "is", "was", "he", "she", "of",
+    "to", "and", "in", "said", "for", "The", "on", "it", "with", "has", "be",
+    "will", "had", "this", "that", "by", "as", "not", "from", "at", "its",
+    "they", "were", "would", "have", "or", "we", "his", "him", "her")
+
   val documents = context
     .wholeTextFiles("src/main/resources/reuter/extracted/")
     .map{ _._2 }
     .map{ text => text.split("\n\n").last }
-    .map{ _.split("\\s+").toSeq }
+    .map{ _.split("\\s+").toSeq.filter{ word => !stopwords.contains(word) } }
 
   val hashingTF = new HashingTF()
   val tf = hashingTF.transform(documents)
@@ -23,8 +29,8 @@ object KmeansSample extends App {
   val tfidf = idf.transform(tf)
 
   val k = 20
-  val maxItreations = 50
-  val kmeansModel = KMeans.train(tfidf, k, maxItreations)
+  val maxIterations = 50
+  val kmeansModel = KMeans.train(tfidf, k, maxIterations)
 
   (kmeansModel.predict(tfidf) zip documents).groupBy {
     case (clusterId: Int, _) => clusterId
@@ -35,24 +41,22 @@ object KmeansSample extends App {
   }.map {
     case (clusterId: Int, docs: Iterable[Seq[String]]) => (clusterId, docs.flatten)
   }.map {
-    case (clusterId: Int, words: Iterable[String]) => {
+    case (clusterId: Int, words: Iterable[String]) =>
       var wordsMap = Map[String, Int]()
       words.foreach { word =>
-        val oldCount = wordsMap.get(word) getOrElse 0
+        val oldCount = wordsMap.getOrElse(key = word, default = 0)
         wordsMap += (word -> (oldCount + 1))
       }
       (clusterId, wordsMap.toSeq.sortBy{ _._2 }(Ordering[Int].reverse))
-    }
   }.map {
     case (clusterId: Int, wordsTable: Seq[(String, Int)]) => (clusterId, wordsTable.take(10))
   }.foreach {
-    case (clusterId: Int, wordsTable: Seq[(String, Int)]) => {
+    case (clusterId: Int, wordsTable: Seq[(String, Int)]) =>
       val wordCountString = wordsTable.map {
-        case (word, count) => s"${word}(${count})"
+        case (word, count) => s"$word($count)"
       }.reduceLeft {
-        (acc: String, elem: String) => (acc + ", " + elem)
+        (acc: String, elem: String) => acc + ", " + elem
       }
-      println(s"ClusterId : ${clusterId}, Top words : ${wordCountString}")
-    }
+      println(s"ClusterId : $clusterId, Top words : $wordCountString")
   }
 }
